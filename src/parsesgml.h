@@ -124,7 +124,10 @@ class html_tag_class
         estate CDATA9(wint_t kar);
         estate endtag(wint_t kar);
 #if defined NOSGMLCALLBACKS
-        html_tag_class(){}
+        html_tag_class()
+            {
+            tagState = &html_tag_class::def;
+            }
 #else
         html_tag_class(void * arg):arg(arg)
             {
