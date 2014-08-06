@@ -76,7 +76,7 @@ estate html_tag_class::lt(wint_t kar)
             return tag;
         case '?':
             CallBackStartScript(arg);
-            tagState = &html_tag_class::script;
+            tagState = &html_tag_class::script; // <?
             return tag;
         case '/':
             CallBackEndTag(arg);
@@ -596,7 +596,7 @@ estate html_tag_class::script(wint_t kar)
             tagState = &html_tag_class::def;
             CallBackEndScript(arg);
             return endoftag;
-        case '?':
+        case '?':                       // <? ....... ?
 //            CallBackEndTag(arg);
             tagState = &html_tag_class::endscript;
             //CallBackEndScript(arg);
@@ -610,12 +610,13 @@ estate html_tag_class::endscript(wint_t kar)
     {
     switch(kar)
         {
-        case '>':
+        case '>':                               // <? ...... ?>  (XML Processing Instruction)
             tagState = &html_tag_class::def;
             CallBackEndScript(arg);
             return endoftag;
         default:
-            tagState = &html_tag_class::CDATA7;
+//            tagState = &html_tag_class::CDATA7;
+            tagState = &html_tag_class::script; // <? ...... ? ...
             return tag;
         }
     }
