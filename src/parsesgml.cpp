@@ -47,11 +47,26 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #define CallBackNoMoreAttributes(a)
 #endif
 
+static bool XML  = false;
+static bool HTML = false;
+
+estate (html_tag_class::*def)(wint_t kar);
+
+extern void parseAsXml()   // processor instruction ends with ?>
+    {
+    XML  = true;
+    }
+
+extern void parseAsHtml()  // script and style elements take CDATA
+    {
+    HTML = true;
+    }
+
 void dummyCallBack(void *){}
 
 estate (html_tag_class::*tagState)(wint_t kar);
 
-estate html_tag_class::def(wint_t kar)
+estate html_tag_class::def_pcdata(wint_t kar)
     {
     switch(kar)
         {
@@ -63,20 +78,32 @@ estate html_tag_class::def(wint_t kar)
             return notag;
         }
     }
+    
+estate html_tag_class::def_cdata(wint_t kar)
+    {
+    switch(kar)
+        {
+        case '<':
+            tagState = &html_tag_class::lt_cdata;
+            return tag;
+        default:
+            return notag;
+        }
+    }
 
 estate html_tag_class::lt(wint_t kar)
     {
     switch(kar)
         {
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             return notag;
         case '!':
             tagState = &html_tag_class::markup;
             return tag;
         case '?':
             CallBackStartScript(arg);
-            tagState = &html_tag_class::script; // <?
+            tagState = &html_tag_class::PI; // <?
             return tag;
         case '/':
             CallBackEndTag(arg);
@@ -87,6 +114,15 @@ estate html_tag_class::lt(wint_t kar)
         case '\n':
         case '\r':
             return tag;
+        case 's':
+        case 'S':
+            if(HTML && !XML)
+                {
+                tagState = &html_tag_class::perhapsScriptOrStyle;
+                CallBackStartElementName(arg);
+                return tag;
+                }
+            /* fall through */
         default:
             if(('A' <= kar && kar <= 'Z') || ('a' <= kar && kar <= 'z') || (kar & 0x80))
                 {
@@ -96,9 +132,36 @@ estate html_tag_class::lt(wint_t kar)
                 }
             else
                 {
-                tagState = &html_tag_class::def;
+                tagState = def;
                 return notag;
                 }
+        }
+    }
+
+estate html_tag_class::lt_cdata(wint_t kar)
+    {
+    switch(kar)
+        {
+        case '/':
+            CallBackStartMarkUp(arg);
+//            putOperatorChar('.');
+            tagState = &html_tag_class::endtag;
+            def = &html_tag_class::def_pcdata;
+            return tag;
+        default:
+            tagState = &html_tag_class::def_cdata;
+            return notag;            
+        }
+    }
+
+static int scriptstylei = 0;
+
+static void stillCdata()
+    {
+    if(scriptstylei > 0 && def == &html_tag_class::def_cdata)
+        {
+        def = &html_tag_class::def_pcdata;
+        scriptstylei = 0;
         }
     }
 
@@ -113,7 +176,7 @@ estate html_tag_class::element(wint_t kar)
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             CallBackEndElementName(arg);
             CallBackNoMoreAttributes(arg);
             return endoftag;
@@ -121,6 +184,7 @@ estate html_tag_class::element(wint_t kar)
         case '_':
         case ':':
         case '.':
+            stillCdata();
             return tag;
         case 0xA0:
         case ' ':
@@ -138,10 +202,14 @@ estate html_tag_class::element(wint_t kar)
             return tag;
         default:
             if(('0' <= kar && kar <= '9') || ('A' <= kar && kar <= 'Z') || ('a' <= kar && kar <= 'z') || (kar & 0x80))
+                {
+                stillCdata();
                 return tag;
+                }
             else
                 {
-                tagState = &html_tag_class::def;
+                stillCdata();
+                tagState = def;
                 return notag;
                 }
         }
@@ -158,7 +226,7 @@ estate html_tag_class::elementonly(wint_t kar)
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             CallBackEndElementName(arg);
             CallBackNoMoreAttributes(arg);
             return endoftag;
@@ -180,7 +248,7 @@ estate html_tag_class::elementonly(wint_t kar)
                 return tag;
             else
                 {
-                tagState = &html_tag_class::def;
+                tagState = def;
                 return notag;
                 }
         }
@@ -196,7 +264,7 @@ estate html_tag_class::gt(wint_t kar)
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             CallBackNoMoreAttributes(arg);
             return endoftag;
         case 0xA0:
@@ -206,7 +274,7 @@ estate html_tag_class::gt(wint_t kar)
         case '\r':
             return tag;
         default:
-            tagState = &html_tag_class::def;
+            tagState = def;
             return notag;
         }
     }
@@ -221,7 +289,7 @@ estate html_tag_class::emptytag(wint_t kar)
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             //CallBackNoMoreAttributes(arg);
             return endoftag;
         case 0xA0:
@@ -231,7 +299,7 @@ estate html_tag_class::emptytag(wint_t kar)
         case '\r':
             return tag;
         default:
-            tagState = &html_tag_class::def;
+            tagState = def;
             return notag;
         }
     }
@@ -246,7 +314,7 @@ estate html_tag_class::atts(wint_t kar)
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             CallBackNoMoreAttributes(arg);
             return endoftag;
         case 0xA0:
@@ -269,7 +337,7 @@ estate html_tag_class::atts(wint_t kar)
                 }
             else
                 {
-                tagState = &html_tag_class::def;
+                tagState = def;
                 return notag;
                 }
         }
@@ -286,7 +354,7 @@ estate html_tag_class::name(wint_t kar)
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             CallBackEndAttributeName(arg);
             CallBackNoMoreAttributes(arg);
             return endoftag;
@@ -317,7 +385,7 @@ estate html_tag_class::name(wint_t kar)
                 return tag;
             else
                 {
-                tagState = &html_tag_class::def;
+                tagState = def;
                 return notag;
                 }
         }
@@ -330,7 +398,7 @@ estate html_tag_class::value(wint_t kar)
         case '>':
         case '/':
         case '=':
-            tagState = &html_tag_class::def;
+            tagState = def;
             return notag;
         case 0xA0:
         case ' ':
@@ -359,7 +427,7 @@ estate html_tag_class::value(wint_t kar)
                 }
             else
                 {
-                tagState = &html_tag_class::def;
+                tagState = def;
                 return notag;
                 }
         }
@@ -375,14 +443,14 @@ estate html_tag_class::atts_or_value(wint_t kar)
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             CallBackNoMoreAttributes(arg);
             return endoftag;
         case '-':
         case '_':
         case ':':
         case '.':
-            tagState = &html_tag_class::def;
+            tagState = def;
             return notag;
         case 0xA0:
         case ' ':
@@ -407,7 +475,7 @@ estate html_tag_class::atts_or_value(wint_t kar)
                 }
             else
                 {
-                tagState = &html_tag_class::def;
+                tagState = def;
                 return notag;
                 }
         }
@@ -424,7 +492,7 @@ estate html_tag_class::invalue(wint_t kar)
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             CallBackEndValue(arg);
             CallBackNoMoreAttributes(arg);
             return endoftag;
@@ -443,7 +511,7 @@ estate html_tag_class::invalue(wint_t kar)
                 }
             else
                 {
-                tagState = &html_tag_class::def;
+                tagState = def;
                 return notag;
                 }
         }
@@ -516,7 +584,7 @@ estate html_tag_class::endvalue(wint_t kar)
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             CallBackNoMoreAttributes(arg);
             return endoftag;
         case 0xA0:
@@ -532,7 +600,7 @@ estate html_tag_class::endvalue(wint_t kar)
             tagState = &html_tag_class::emptytag;
             return tag;
         default:
-            tagState = &html_tag_class::def;
+            tagState = def;
             return notag;
         }
     }
@@ -547,7 +615,7 @@ estate html_tag_class::markup(wint_t kar) // <!
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             CallBackEndMarkUp(arg);
             return endoftag;
         case '-':
@@ -575,7 +643,7 @@ estate html_tag_class::unknownmarkup(wint_t kar) /* <! */
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             CallBackEndMarkUp(arg);
             return endoftag;
         default:
@@ -583,40 +651,101 @@ estate html_tag_class::unknownmarkup(wint_t kar) /* <! */
         }
     }
 
-estate html_tag_class::script(wint_t kar)
+static int scriptstyleimax = 0;
+static wint_t * elementNameLower;
+static wint_t * elementNameUpper;
+estate html_tag_class::scriptOrStyleElement(wint_t kar) /* <sc or <SC or <Sc or <sC or <st or <ST or <St or <sT */
     {
-    switch(kar)
+    if(kar == elementNameLower[scriptstylei] || kar == elementNameUpper[scriptstylei])
         {
-        case '<':
-            tagState = &html_tag_class::lt;
-            CallBackEndScript(arg);
-            CallBackStartMarkUp(arg);
-            return endoftag_startoftag;
-        case '>':
-            tagState = &html_tag_class::def;
-            CallBackEndScript(arg);
-            return endoftag;
-        case '?':                       // <? ....... ?
-//            CallBackEndTag(arg);
-            tagState = &html_tag_class::endscript;
-            //CallBackEndScript(arg);
-            return tag;
-        default:
-            return tag;
+        estate ret;
+        if(scriptstylei == scriptstyleimax)
+            {
+            def = &html_tag_class::def_cdata;
+            tagState = &html_tag_class::element;
+            scriptstylei = 0;
+            }
+        else
+            ++scriptstylei;
+        ret = html_tag_class::element(kar);
+        tagState = &html_tag_class::scriptOrStyleElement;
+        return ret;
         }
+    else
+        {
+        scriptstylei = 0;
+        }
+    return element(kar);
     }
 
-estate html_tag_class::endscript(wint_t kar)
+estate html_tag_class::perhapsScriptOrStyle(wint_t kar) /* <s or <S */
+    {
+    static wint_t ript[] = {'r','i','p','t',0};
+    static wint_t RIPT[] = {'R','I','P','T',0};
+    static wint_t yle[] = {'y','l','e',0};
+    static wint_t YLE[] = {'Y','L','E',0};
+    estate ret;
+    switch(kar)
+        {
+        case 'C':
+        case 'c':
+            elementNameLower = ript;
+            elementNameUpper = RIPT;
+            scriptstyleimax = sizeof(ript)/sizeof(ript[0]) - 2;
+            ret = element(kar);
+            tagState = &html_tag_class::scriptOrStyleElement;
+            return ret;
+        case 'T':
+        case 't':
+            elementNameLower = yle;
+            elementNameUpper = YLE;
+            scriptstyleimax = sizeof(yle)/sizeof(yle[0]) - 2;
+            ret = element(kar);
+            tagState = &html_tag_class::scriptOrStyleElement;
+            return ret;
+        default:
+            tagState = &html_tag_class::element;
+        }
+    return element(kar);
+    }
+
+estate html_tag_class::PI(wint_t kar)
+    {
+    if(XML)
+        switch(kar)
+            {
+            case '?':                       // <? ....... ?  If followed by >, XML processing instruction ends.
+    //            CallBackEndTag(arg);
+                tagState = &html_tag_class::endPI;
+                //CallBackEndScript(arg);
+                return tag;
+            default:
+                return tag;
+            }
+    else
+        switch(kar)
+            {
+            case '>':                       // SGML (HTML) processing instruction ends here
+                tagState = def;
+                CallBackEndScript(arg);
+                return endoftag;
+            default:
+                return tag;
+            }
+    }
+
+estate html_tag_class::endPI(wint_t kar)
     {
     switch(kar)
         {
         case '>':                               // <? ...... ?>  (XML Processing Instruction)
-            tagState = &html_tag_class::def;
+            tagState = def;
             CallBackEndScript(arg);
             return endoftag;
+        case '?':                               // <? ...... ??
+            return tag;
         default:
-//            tagState = &html_tag_class::CDATA7;
-            tagState = &html_tag_class::script; // <? ...... ? ...
+            tagState = &html_tag_class::PI; // <? ...... ? ...
             return tag;
         }
     }
@@ -630,7 +759,7 @@ estate html_tag_class::DOCTYPE1(wint_t kar) // <!D
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             return endoftag;
         case 'O':
             tagState = &html_tag_class::DOCTYPE2;
@@ -650,7 +779,7 @@ estate html_tag_class::DOCTYPE2(wint_t kar) // <!DO
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             return endoftag;
         case 'C':
             tagState = &html_tag_class::DOCTYPE3;
@@ -670,7 +799,7 @@ estate html_tag_class::DOCTYPE3(wint_t kar) // <!DOC
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             return endoftag;
         case 'T':
             tagState = &html_tag_class::DOCTYPE4;
@@ -690,7 +819,7 @@ estate html_tag_class::DOCTYPE4(wint_t kar) // <!DOCT
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             return endoftag;
         case 'Y':
             tagState = &html_tag_class::DOCTYPE5;
@@ -710,7 +839,7 @@ estate html_tag_class::DOCTYPE5(wint_t kar) // <!DOCTY
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             return endoftag;
         case 'P':
             tagState = &html_tag_class::DOCTYPE6;
@@ -730,7 +859,7 @@ estate html_tag_class::DOCTYPE6(wint_t kar) // <!DOCTYP
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             return endoftag;
         case 'E':
             tagState = &html_tag_class::DOCTYPE7;
@@ -750,7 +879,7 @@ estate html_tag_class::DOCTYPE7(wint_t kar) // <!DOCTYPE
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             CallBackEndDOCTYPE(arg);
             return endoftag;
         case ' ':
@@ -775,7 +904,7 @@ estate html_tag_class::DOCTYPE8(wint_t kar) // <!DOCTYPE S
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             CallBackEndDOCTYPE(arg);
             return endoftag;
         case '[':
@@ -809,7 +938,7 @@ estate html_tag_class::DOCTYPE10(wint_t kar)  // <!DOCTYPE S [ ]
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             CallBackEndDOCTYPE(arg);
             return endoftag;
         case ' ':
@@ -833,7 +962,7 @@ estate html_tag_class::CDATA1(wint_t kar) // <![
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             return endoftag;
         case 'C':
             tagState = &html_tag_class::CDATA2;
@@ -854,7 +983,7 @@ estate html_tag_class::CDATA2(wint_t kar) // <![C
             return endoftag_startoftag;
             //CallBackNoMoreAttributes(arg);
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             return endoftag;
         case 'D':
             tagState = &html_tag_class::CDATA3;
@@ -874,7 +1003,7 @@ estate html_tag_class::CDATA3(wint_t kar) // <![CD
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             return endoftag;
         case 'A':
             tagState = &html_tag_class::CDATA4;
@@ -894,7 +1023,7 @@ estate html_tag_class::CDATA4(wint_t kar) // <![CDA
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             return endoftag;
         case 'T':
             tagState = &html_tag_class::CDATA5;
@@ -914,7 +1043,7 @@ estate html_tag_class::CDATA5(wint_t kar) // <![CDAT
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             return endoftag;
         case 'A':
             tagState = &html_tag_class::CDATA6;
@@ -934,7 +1063,7 @@ estate html_tag_class::CDATA6(wint_t kar) // <![CDATA
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             return endoftag;
         case '[':
             tagState = &html_tag_class::CDATA7;
@@ -976,7 +1105,7 @@ estate html_tag_class::CDATA9(wint_t kar) // <![CDATA[ ]]
     switch(kar)
         {
         case '>':  // <![CDATA[ ]]>
-            tagState = &html_tag_class::def;
+            tagState = def;
             CallBackEndCDATA(arg);
             return endoftag;
         default:
@@ -995,7 +1124,7 @@ estate html_tag_class::h1(wint_t kar) // <!-
             CallBackStartMarkUp(arg);
             return notag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             return notag;
         case '-':
             tagState = &html_tag_class::h2;
@@ -1012,7 +1141,7 @@ estate html_tag_class::h2(wint_t kar) // <!--
     switch(kar)
         {
 /*      case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             return endoftag;*/
         case '-':
             tagState = &html_tag_class::h3;
@@ -1040,7 +1169,7 @@ estate html_tag_class::h3(wint_t kar) // <!--  -
     switch(kar)
         {
 /*      case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             return notag;*/
         case '-': // <!-- --
             tagState = &html_tag_class::markup;
@@ -1078,7 +1207,7 @@ estate html_tag_class::endtag(wint_t kar)
             CallBackStartMarkUp(arg);
             return endoftag_startoftag;
         case '>':
-            tagState = &html_tag_class::def;
+            tagState = def;
             CallBackNoMoreAttributes(arg);
             return endoftag;
         case 0xA0:
@@ -1096,7 +1225,7 @@ estate html_tag_class::endtag(wint_t kar)
                 }
             else
                 {
-                tagState = &html_tag_class::def;
+                tagState = def;
                 return notag;
                 }
         }

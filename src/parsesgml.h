@@ -27,7 +27,12 @@ class html_tag_class;
 
 typedef enum {notag,tag,endoftag,endoftag_startoftag} estate;
 extern estate (html_tag_class::*tagState)(wint_t kar);
+extern estate (html_tag_class::*def)(wint_t kar);
 extern void dummyCallBack(void *);
+
+extern void parseAsXml();   // processor instruction ends with ?>
+extern void parseAsHtml();  // script and style elements take CDATA
+
 class html_tag_class
     {
     private:
@@ -80,8 +85,10 @@ class html_tag_class
         void (*CallBackNoMoreAttributes)(void *);
 #endif
     public:
-        estate def(wint_t kar);
+        estate def_pcdata(wint_t kar);
+        estate def_cdata(wint_t kar);
         estate lt(wint_t kar);
+        estate lt_cdata(wint_t kar);
         estate element(wint_t kar);
         estate elementonly(wint_t kar);
         estate gt(wint_t kar);
@@ -98,8 +105,10 @@ class html_tag_class
         estate endvalue(wint_t kar);
         estate markup(wint_t kar);
         estate unknownmarkup(wint_t kar);
-        estate script(wint_t kar);
-        estate endscript(wint_t kar);
+        estate scriptOrStyleElement(wint_t kar);
+        estate perhapsScriptOrStyle(wint_t kar);
+        estate PI(wint_t kar);
+        estate endPI(wint_t kar);
         estate DOCTYPE1(wint_t kar);
         estate DOCTYPE2(wint_t kar);
         estate DOCTYPE3(wint_t kar);
@@ -126,10 +135,11 @@ class html_tag_class
 #if defined NOSGMLCALLBACKS
         html_tag_class()
             {
-            tagState = &html_tag_class::def;
+            def = &html_tag_class::def_pcdata;
+            tagState = def;
             }
 #else
-        html_tag_class(void * arg):arg(arg)
+        html_tag_class()
             {
             CallBackStartScript =
             CallBackEndScript =
@@ -151,7 +161,8 @@ class html_tag_class
             CallBackEmptyAttribute =
             CallBackEndAttribute =
                 dummyCallBack;
-            tagState = &html_tag_class::def;
+            def = &html_tag_class::def_pcdata;
+            tagState = def;
             }
         void setCallBackStartScript(void (*f)(void *))          {CallBackStartScript = f;}
         void setCallBackEndScript(void (*f)(void *))            {CallBackEndScript = f;}
