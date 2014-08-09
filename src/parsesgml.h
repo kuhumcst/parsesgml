@@ -139,7 +139,7 @@ class html_tag_class
             tagState = def;
             }
 #else
-        html_tag_class()
+        html_tag_class(void * arg):arg(arg)
             {
             CallBackStartScript =
             CallBackEndScript =
